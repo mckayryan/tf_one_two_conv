@@ -50,7 +50,7 @@ def target_placeholder():
     return tf.placeholder(dtype=tf.float32, shape=[None, 10],
                           name="image_target_onehot")
 
-def computation_variable(input_size, target_size):
+def computation_variable(weight_size, bias_size):
     """
     Returns two tensorflow Variables:
 
@@ -60,8 +60,8 @@ def computation_variable(input_size, target_size):
     Bias vector of size:    target_size x 1
         Since we have a single bias value per target layer
     """
-    return  tf.Variable(tf.truncated_normal([input_size,target_size], stddev=0.1)), \
-            tf.Variable(tf.zeros([target_size]))
+    return  tf.Variable(tf.truncated_normal(weight_size + [bias_size], stddev=0.1)), \
+            tf.Variable(tf.constant(0.1, shape=[bias_size]))
 
 def onelayer(X, Y_, layersize=10):
     """
@@ -83,7 +83,7 @@ def onelayer(X, Y_, layersize=10):
     input_shape = X.get_shape()
 
     # set variables (weights matrix, bias vectors)
-    W, b = computation_variable(input_size=input_shape[1].value, target_size=layersize)
+    W, b = computation_variable(weight_size=[input_shape[1].value], bias_size=layersize)
 
     # define input into activation function
     logits = tf.matmul(X,W) + b
@@ -118,9 +118,9 @@ def twolayer(X, Y_, hiddensize=30, outputsize=10):
 
     # set variables (weights matrix, bias vectors)
         # fully connected input layer to hidden layer
-    W1, b1 = computation_variable(input_size=input_shape[1].value, target_size=hiddensize)
+    W1, b1 = computation_variable(weight_size=[input_shape[1].value], bias_size=hiddensize)
         # fully connected hidden layer to output layer
-    W2, b2 = computation_variable(input_size=hiddensize, target_size=outputsize)
+    W2, b2 = computation_variable(weight_size=[hiddensize], bias_size=outputsize)
 
     # output of hidden layer
     Y1 = tf.nn.relu(features=tf.matmul(X,W1)+b1)
@@ -134,8 +134,10 @@ def twolayer(X, Y_, hiddensize=30, outputsize=10):
 
     return W1, b1, W2, b2, logits, Y2, batch_xentropy, batch_loss
 
-def convnet(X, Y, convlayer_sizes=[10, 10], \
-        filter_shape=[3, 3], outputsize=10, padding="same"):
+
+
+def convnet(X, Y_, convlayer_sizes=[10, 10], \
+        filter_shape=[3, 3], outputsize=10, padding="SAME"):
     """
     Create a Tensorflow model for a Convolutional Neural Network. The network
     should be of the following structure:
@@ -160,7 +162,30 @@ def convnet(X, Y, convlayer_sizes=[10, 10], \
     will be from the conv2 layer. If you reshape the conv2 output using tf.reshape,
     you should be able to call onelayer() to get the final layer of your network
     """
-    return conv1, conv2, w, b, logits, preds, batch_xentropy, batch_loss
+    input_shape = X.get_shape()
+    flattened_size = input_shape[1].value*input_shape[2].value
+
+    W1_conv, b1_conv = computation_variable(weight_size=filter_shape+[1], bias_size=convlayer_sizes[0])
+    W2_conv, b2_conv = computation_variable(weight_size=filter_shape+[convlayer_sizes[0]], bias_size=convlayer_sizes[1])
+    W3_full, b3_full = \
+        computation_variable(weight_size=[flattened_size*convlayer_sizes[1]],bias_size=outputsize)
+
+
+    X_image = tf.reshape(X, [-1] + input_shape[1:].as_list())
+
+    Y1_conv = tf.nn.relu(tf.nn.conv2d(X_image, W1_conv, strides=[1,1,1,1], padding=padding)+ b1_conv)
+    Y2_conv = tf.nn.relu(tf.nn.conv2d(Y1_conv, W2_conv, strides=[1,1,1,1], padding=padding)+ b2_conv)
+
+    Y2_flat = tf.reshape(Y2_conv, shape=[-1, flattened_size*convlayer_sizes[1]])
+
+    Y3_drop = tf.nn.dropout(Y2_flat, 0.8)
+
+    Y3_full = tf.nn.relu(tf.matmul(Y3_drop,W3_full) + b3_full)
+
+    W_softm, b_softm, logits, predictions, batch_xentropy, batch_loss = \
+        onelayer(Y3_full, Y_, outputsize)
+
+    return Y1_conv, Y2_conv, W_softm, b_softm, logits, predictions, batch_xentropy, batch_loss
 
 def train_step(sess, batch, X, Y, train_op, loss_op, summaries_op):
     """
