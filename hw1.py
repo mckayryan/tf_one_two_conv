@@ -60,7 +60,8 @@ def computation_variable(input_size, target_size):
     Bias vector of size:    target_size x 1
         Since we have a single bias value per target layer
     """
-    return tf.Variable(tf.zeros([input_size,target_size])), tf.Variable(tf.zeros([target_size]))
+    return  tf.Variable(tf.truncated_normal([input_size,target_size], stddev=0.1)), \
+            tf.Variable(tf.zeros([target_size]))
 
 def onelayer(X, Y_, layersize=10):
     """
@@ -82,7 +83,7 @@ def onelayer(X, Y_, layersize=10):
     input_shape = X.get_shape()
 
     # set variables (weights matrix, bias vectors)
-    W, b = computation_variable(input_shape[1].value, layersize)
+    W, b = computation_variable(input_size=input_shape[1].value, target_size=layersize)
 
     # define input into activation function
     logits = tf.matmul(X,W) + b
@@ -96,7 +97,7 @@ def onelayer(X, Y_, layersize=10):
 
     return W, b, logits, predictions, batch_xentropy, batch_loss
 
-def twolayer(X, Y, hiddensize=30, outputsize=10):
+def twolayer(X, Y_, hiddensize=30, outputsize=10):
     """
     Create a Tensorflow model for a Neural Network with one hidden layer
 
@@ -113,7 +114,25 @@ def twolayer(X, Y, hiddensize=30, outputsize=10):
         batch_xentropy: The cross-entropy loss for each image in the batch
         batch_loss: The average cross-entropy loss of the batch
     """
-    return w1, b1, w2, b2, logits, preds, batch_xentropy, batch_loss
+    input_shape = X.get_shape()
+
+    # set variables (weights matrix, bias vectors)
+        # fully connected input layer to hidden layer
+    W1, b1 = computation_variable(input_size=input_shape[1].value, target_size=hiddensize)
+        # fully connected hidden layer to output layer
+    W2, b2 = computation_variable(input_size=hiddensize, target_size=outputsize)
+
+    # output of hidden layer
+    Y1 = tf.nn.relu(features=tf.matmul(X,W1)+b1)
+
+    # output layer
+    logits = tf.matmul(Y1,W2) + b2
+    Y2 = tf.nn.softmax(logits)
+
+    batch_xentropy = tf.nn.softmax_cross_entropy_with_logits(labels=Y_, logits=logits)
+    batch_loss = tf.reduce_mean(batch_xentropy)
+
+    return W1, b1, W2, b2, logits, Y2, batch_xentropy, batch_loss
 
 def convnet(X, Y, convlayer_sizes=[10, 10], \
         filter_shape=[3, 3], outputsize=10, padding="same"):
