@@ -129,7 +129,9 @@ def twolayer(X, Y_, hiddensize=30, outputsize=10):
     logits = tf.matmul(Y1,W2) + b2
     Y2 = tf.nn.softmax(logits)
 
+    # define cross entropy for each image in batch
     batch_xentropy = tf.nn.softmax_cross_entropy_with_logits(labels=Y_, logits=logits)
+    # mean of cross entropy for batch
     batch_loss = tf.reduce_mean(batch_xentropy)
 
     return W1, b1, W2, b2, logits, Y2, batch_xentropy, batch_loss
@@ -162,26 +164,37 @@ def convnet(X, Y_, convlayer_sizes=[10, 10], \
     will be from the conv2 layer. If you reshape the conv2 output using tf.reshape,
     you should be able to call onelayer() to get the final layer of your network
     """
+
     input_shape = X.get_shape()
     flattened_size = input_shape[1].value*input_shape[2].value
 
+    # set variables (weights matrix, bias vectors)
+        # conv layer default:   filter [3,3], input [1] -> output [10]
     W1_conv, b1_conv = computation_variable(weight_size=filter_shape+[1], bias_size=convlayer_sizes[0])
+        # conv layer default:   filter [3,3], input channels [10] -> output channels [10]
     W2_conv, b2_conv = computation_variable(weight_size=filter_shape+[convlayer_sizes[0]], bias_size=convlayer_sizes[1])
+        # fully connected layer inputs flattened pixels*[10] -> output [10]
     W3_full, b3_full = \
         computation_variable(weight_size=[flattened_size*convlayer_sizes[1]],bias_size=outputsize)
 
-
+    # shape into rectangular image
     X_image = tf.reshape(X, [-1] + input_shape[1:].as_list())
 
+    # output of first conv layer
     Y1_conv = tf.nn.relu(tf.nn.conv2d(X_image, W1_conv, strides=[1,1,1,1], padding=padding)+ b1_conv)
+    # output of second conv layer
     Y2_conv = tf.nn.relu(tf.nn.conv2d(Y1_conv, W2_conv, strides=[1,1,1,1], padding=padding)+ b2_conv)
 
+    # flatten hidden conv layer output for fully connected layer
     Y2_flat = tf.reshape(Y2_conv, shape=[-1, flattened_size*convlayer_sizes[1]])
 
-    Y3_drop = tf.nn.dropout(Y2_flat, 0.8)
+    # dropout for second conv layer
+    # Y3_drop = tf.nn.dropout(Y2_flat, 0.8)
 
-    Y3_full = tf.nn.relu(tf.matmul(Y3_drop,W3_full) + b3_full)
+    # output of fully connected layer
+    Y3_full = tf.nn.relu(tf.matmul(Y2_flat, W3_full) + b3_full)
 
+    # use onelayer to compute output and metrics from fully connected layer as inputs
     W_softm, b_softm, logits, predictions, batch_xentropy, batch_loss = \
         onelayer(Y3_full, Y_, outputsize)
 
